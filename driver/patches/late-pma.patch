@@ -68,7 +68,7 @@ diff -Naur a/src/nvidia/src/kernel/gpu/mem_mgr/mem_mgr.c b/src/nvidia/src/kernel
      }
  
      return status;
-@@ -3646,6 +3675,181 @@
+@@ -3646,6 +3675,184 @@
      return status;
  }
  
@@ -168,6 +168,8 @@ diff -Naur a/src/nvidia/src/kernel/gpu/mem_mgr/mem_mgr.c b/src/nvidia/src/kernel
 +
 +    pmaRegion.base = NV_MAX(pCandidate->base, stockFbBytes);
 +    pmaRegion.limit = pCandidate->limit;
++    if (pmaRegion.limit > 0x0000000F7FFFFFFFULL)   /* CMP170HX: cap usable at 62GiB (top HBM unbacked -> XID31) */
++        pmaRegion.limit = 0x0000000F7FFFFFFFULL;
 +    pmaRegion.performance = pCandidate->performance;
 +    pmaRegion.bSupportCompressed = NV_TRUE;
 +    pmaRegion.bSupportISO = pCandidate->bSupportISO;
@@ -213,7 +215,7 @@ diff -Naur a/src/nvidia/src/kernel/gpu/mem_mgr/mem_mgr.c b/src/nvidia/src/kernel
 +        {
 +            FB_REGION_DESCRIPTOR publicRegion = *pCandidate;
 +            publicRegion.base = stockFbBytes;
-+            publicRegion.limit = pCandidate->limit;
++            publicRegion.limit = pmaRegion.limit;   /* 62GiB cap */
 +            publicRegion.rsvdSize = 0;
 +            publicRegion.bRsvdRegion = NV_FALSE;
 +            publicRegion.bInternalHeap = NV_FALSE;
@@ -232,6 +234,7 @@ diff -Naur a/src/nvidia/src/kernel/gpu/mem_mgr/mem_mgr.c b/src/nvidia/src/kernel
 +            pCandidate->rsvdSize = 0;
 +            pCandidate->bInternalHeap = NV_FALSE;
 +            pCandidate->bSupportCompressed = NV_FALSE;
++            pCandidate->limit = pmaRegion.limit;   /* 62GiB cap */
 +        }
 +        memmgrRegenerateFbRegionPriority(pGpu, pMemoryManager);
 +    }
