@@ -60,6 +60,7 @@ Then perform a cold reboot (full power off, then boot).
 | Full BAR1 Size (64GB) | Working ✓ |
 | JTAG (Host2Jtag register access) | Working ✓ |
 | Persistence across reboot (patched modules) | Working ✓ |
+| Full-VRAM stability (unbacked top HBM region excluded) | Working ✓ |
 
 ---
 
@@ -76,3 +77,9 @@ Then perform a cold reboot (full power off, then boot).
 ## Support & Community
 
 Having issues? Need help? Join our [Discord community](https://discord.gg/CdHSakKSFv) to discuss with other users and get support.
+
+---
+
+## Fork note: late-PMA clamp
+
+This fork carries an extra fix on top of `driver/patches/late-pma.patch`: the unbacked top HBM sliver of the unlocked geometry — the last ~150 MiB with no real memory behind it — is excluded from the PMA (the late-PMA region limit is capped at 62 GiB). Upstream exposes that region to the allocator, so filling VRAM to the very top (e.g. a large matmul or a full KV cache) crashes with `Xid 31 ... FAULT_INFO_TYPE_REGION_VIOLATION` at a bogus address. With the clamp the region is simply dropped, leaving ~63.4 GiB of good, fully usable VRAM; allocating past it returns a clean out-of-memory error instead of a hard fault. (Clamp originally by tlswotj, verified on 3× CMP 170HX.)
