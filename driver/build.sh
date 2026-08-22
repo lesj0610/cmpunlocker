@@ -56,6 +56,29 @@ PATCH_ORDER=(
     name-string.patch
     bar1-resize-unlock.patch
 )
+
+#
+# BAR1 P2P is opt-in. These patches change how peer-to-peer connections are
+# negotiated for every unlockable card in the system, and the result depends on
+# whether the host can actually route peer traffic between the slots in use, so
+# they stay out of the default series. Enable with CMPUNLOCKER_ENABLE_P2P=1
+# (install.sh --p2p). They must be applied after bar1-resize-unlock.patch.
+#
+P2P_PATCH_ORDER=(
+    p2p-caps-force.patch
+    p2p-bar1.patch
+    p2p-skip-mailbox-peer-preinit.patch
+    p2p-bar1-readcap-override.patch
+)
+
+ENABLE_P2P="${CMPUNLOCKER_ENABLE_P2P:-}"
+if [[ -n "${ENABLE_P2P}" ]]; then
+    PATCH_ORDER+=("${P2P_PATCH_ORDER[@]}")
+    info "BAR1 P2P patches enabled"
+else
+    info "BAR1 P2P patches skipped (set CMPUNLOCKER_ENABLE_P2P=1 to include them)"
+fi
+
 PATCH_FILES=()
 for name in "${PATCH_ORDER[@]}"; do
     p="${PATCH_DIR}/${name}"
@@ -189,6 +212,7 @@ mkdir -p "${INSTALL_MOD_DIR}"
 printf '%s\n' "${VERSION}" > "${INSTALL_MOD_DIR}/driver_version"
 printf '%s\n' "${PROFILE}" > "${INSTALL_MOD_DIR}/card_profile"
 printf '%s\n' "${UNLOCK_LABEL}" > "${INSTALL_MOD_DIR}/unlock_geometry"
+printf '%s\n' "$([[ -n "${ENABLE_P2P}" ]] && echo yes || echo no)" > "${INSTALL_MOD_DIR}/p2p_bar1"
 if [[ -n "${CMPUNLOCKER_GPU_INVENTORY:-}" ]]; then
     printf '%s\n' "${CMPUNLOCKER_GPU_INVENTORY}" > "${INSTALL_MOD_DIR}/gpu_inventory"
     ok "Wrote gpu_inventory ($(echo "${CMPUNLOCKER_GPU_INVENTORY}" | grep -c . || true) GPU(s))"

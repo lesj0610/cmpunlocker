@@ -1,0 +1,27 @@
+--- a/src/nvidia/src/kernel/gpu/gpu.c
++++ b/src/nvidia/src/kernel/gpu/gpu.c
+@@ -2517,6 +2517,24 @@
+ 
+     pGpu->pcieP2PReadCaps = p2pCapsParams.p2pReadCapsStatus;
+     pGpu->pcieP2PWriteCaps = p2pCapsParams.p2pWriteCapsStatus;
++
++    //
++    // cmpunlocker: CMP boards report PCIe P2P as unsupported through the GSP
++    // RPC above. Both status words use zero to mean "no restriction", so
++    // clearing them advertises read and write P2P as available. Required
++    // before BAR1 P2P can be negotiated. Gated on the unlockable device IDs.
++    //
++    {
++        NvU32 devId = pGpu->idInfo.PCIDeviceID >> 16;
++
++        if (devId == 0x20C2 || devId == 0x2082)
++        {
++            pGpu->pcieP2PReadCaps  = 0;
++            pGpu->pcieP2PWriteCaps = 0;
++            NV_PRINTF(LEVEL_ERROR,
++                      "cmpunlocker: PCIe P2P caps forced available\n");
++        }
++    }
+ }
+ 
+ static void

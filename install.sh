@@ -11,25 +11,36 @@ LOG_FILE="${LOG_DIR}/install_$(date +%Y%m%d_%H%M%S).log"
 PROFILE_OVERRIDE=""
 CONFIGURE_IOMMU=1
 CONFIGURE_GEN2_SERVICE=1
+ENABLE_P2P=""
 for arg in "$@"; do
     case "${arg}" in
         --profile=8gb|--profile=8GB) PROFILE_OVERRIDE="8gb" ;;
         --profile=10gb|--profile=10GB) PROFILE_OVERRIDE="10gb" ;;
         --no-iommu) CONFIGURE_IOMMU=0 ;;
         --no-gen2-service) CONFIGURE_GEN2_SERVICE=0 ;;
+        --p2p) ENABLE_P2P=1 ;;
         -h|--help)
             cat <<'EOF'
-Usage: sudo ./install.sh [--profile=8gb|10gb] [--no-iommu] [--no-gen2-service]
+Usage: sudo ./install.sh [--profile=8gb|10gb] [--no-iommu] [--no-gen2-service] [--p2p]
 
   --profile=8gb   Force 8GB metadata label (geometry is still chosen per PCI ID)
   --profile=10gb  Force 10GB metadata label (geometry is still chosen per PCI ID)
   --no-iommu      Do not touch the kernel command line (leave IOMMU settings alone)
   --no-gen2-service
                   Do not install the early-boot PCIe Gen2 retrain service
+  --p2p           Advertise GPU-to-GPU P2P and negotiate it over BAR1. GSP
+                  reports P2P as unsupported on these boards, so this is off by
+                  default. Requires the BAR1 resize to have taken effect.
 
 By default the installer appends intel_iommu=on / amd_iommu=on plus iommu=pt to
 the kernel command line so the IOMMU runs in passthrough mode. This takes effect
 on the next reboot.
+
+--p2p only changes what the driver advertises and how it wires the peer
+mapping. Whether peer traffic actually flows depends on the host: cards behind
+different root ports, or a chipset that will not route peer-to-peer writes, can
+still fail after the driver reports P2P as available. Confirm with a real
+peer-to-peer copy before relying on it.
 
 Without --profile, each unlockable GPU is classified by PCI device ID:
   10de:20c2 → 8gb / 64GB unlock
@@ -216,11 +227,23 @@ done
 depmod -a "$(uname -r)"
 ok "DKMS conflicting modules resolution complete"
 
+if [[ -n "${ENABLE_P2P}" ]]; then
+    ok "BAR1 P2P requested"
+    warn "This only changes what the driver advertises and how the peer mapping is wired."
+    warn "If the host cannot route peer-to-peer traffic between the slots in use, the copy"
+    warn "is accepted, no error is reported, and nothing arrives at the destination."
+    warn "That is silent data loss, not a clean failure. Confirm with a peer-to-peer copy"
+    warn "that checks the received bytes before running any multi-GPU workload."
+else
+    info "P2P left as GSP reports it (use --p2p to negotiate it over BAR1)"
+fi
+
 step "Building and installing patched modules"
 chmod +x "${SCRIPT_DIR}/driver/build.sh"
 CMPUNLOCKER_DRIVER_VERSION="${detected}" \
 CMPUNLOCKER_CARD_PROFILE="${CARD_PROFILE}" \
 CMPUNLOCKER_GPU_INVENTORY="${CMPUNLOCKER_GPU_INVENTORY}" \
+CMPUNLOCKER_ENABLE_P2P="${ENABLE_P2P}" \
     "${SCRIPT_DIR}/driver/build.sh"
 ok "Patched modules installed (profile ${CARD_PROFILE})"
 
@@ -408,6 +431,11 @@ echo -e "  6. Verify IOMMU after reboot: ${CYAN}cat /proc/cmdline${NC} and ${CYA
 if (( CONFIGURE_GEN2_SERVICE == 1 )); then
     echo -e "  7. Verify negotiated Gen2: ${CYAN}sudo ./tools/service.sh verify${NC}"
     echo -e "     Recovery boot option: ${CYAN}systemd.mask=gen2.service${NC}"
+fi
+if [[ -n "${ENABLE_P2P}" ]]; then
+    echo -e "  8. Check advertised P2P: ${CYAN}nvidia-smi topo -p2p r${NC}"
+    echo "     Advertised is not the same as working. Run a real peer-to-peer copy"
+    echo "     before relying on it, and fall back to host staging if it fails."
 fi
 echo ""
 echo "This script removed the nvidia DKMS kernel modules. You will need to re-run this script after each kernel upgrade"

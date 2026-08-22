@@ -48,6 +48,12 @@ sudo ./install.sh --profile=8gb    # 8GB card → 64GB unlock
 sudo ./install.sh --profile=10gb   # 10GB card → 40GB unlock
 ```
 
+To also negotiate GPU-to-GPU P2P over BAR1, add `--p2p` (off by default):
+
+```bash
+sudo ./install.sh --p2p
+```
+
 Then perform a cold reboot (full power off, then boot).
 
 ## What Gets Unlocked
@@ -61,6 +67,7 @@ Then perform a cold reboot (full power off, then boot).
 | JTAG (Host2Jtag register access) | Working ✓ |
 | Persistence across reboot (patched modules) | Working ✓ |
 | Full-VRAM stability (unbacked top HBM region excluded) | Working ✓ |
+| GPU-to-GPU P2P over BAR1 (`--p2p`) | Opt-in, host dependent |
 
 ---
 
@@ -83,3 +90,40 @@ Having issues? Need help? Join our [Discord community](https://discord.gg/CdHSak
 ## Fork note: late-PMA clamp
 
 This fork carries an extra fix on top of `driver/patches/late-pma.patch`: the unbacked top HBM sliver of the unlocked geometry — the last ~150 MiB with no real memory behind it — is excluded from the PMA (the late-PMA region limit is capped at 62 GiB). Upstream exposes that region to the allocator, so filling VRAM to the very top (e.g. a large matmul or a full KV cache) crashes with `Xid 31 ... FAULT_INFO_TYPE_REGION_VIOLATION` at a bogus address. With the clamp the region is simply dropped, leaving ~63.4 GiB of good, fully usable VRAM; allocating past it returns a clean out-of-memory error instead of a hard fault. (Clamp originally by tlswotj, verified on 3× CMP 170HX.)
+
+## Fork note: BAR1 P2P
+
+GSP reports PCIe P2P as unsupported on these boards, so the stock driver refuses
+peer-to-peer mappings even when the hardware path exists. `--p2p` adds four
+patches that change that:
+
+| Patch | Effect |
+|---|---|
+| `p2p-caps-force.patch` | Clears `pcieP2PReadCaps` / `pcieP2PWriteCaps` after the GSP RPC so P2P is advertised as available |
+| `p2p-bar1.patch` | Selects BAR1 as the P2P connection type instead of the default (mailbox/NVLink) path, and carries the BAR1 peer mapping through the bus, IO VA space and UVM layers |
+| `p2p-skip-mailbox-peer-preinit.patch` | Skips the mailbox peer pre-init that has no backing hardware here |
+| `p2p-bar1-readcap-override.patch` | Reports the BAR1 read capability the caps query expects |
+
+They are applied after `bar1-resize-unlock.patch` and gated at runtime on the
+unlockable device IDs, so other GPUs in the same system are untouched. The
+series is kept out of the default install because the outcome depends on the
+host, not just the card.
+
+Two things this does **not** do:
+
+- It does not make the host route peer traffic, and the failure is not graceful.
+  On a host that cannot route peer transactions the driver reports `OK`,
+  `cudaDeviceCanAccessPeer` returns true, the copy returns without error, and
+  **nothing arrives at the destination**. Measured on a dual-root-port desktop
+  platform (`nvidia-smi topo -m` = `PHB`, ACS `ReqRedir+ CmpltRedir+` on both
+  root ports): advertised `OK` in both directions, 100 % of a 256 MiB device-to-
+  device copy lost, latency unchanged at ~17 µs, while the host-staged control
+  copy was byte-exact. Silent data loss, not a clean failure. `nvidia-smi topo
+  -p2p r` shows what the driver advertises, not what works — always confirm with
+  a peer-to-peer copy that checks the received bytes.
+- It does not help if the BAR1 resize did not take effect. Check that BAR1 is
+  actually mapped at the unlocked size (`lspci -vv`, `Region 1`) first; a 64 MiB
+  BAR1 leaves nothing for BAR1 P2P to map through.
+
+`verify.sh` reports whether the running build includes the series, reading the
+`p2p_bar1` marker written next to the installed modules.
