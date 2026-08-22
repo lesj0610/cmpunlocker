@@ -111,10 +111,16 @@ host, not just the card.
 
 Two things this does **not** do:
 
-- It does not make the host route peer traffic. Cards behind different root
-  ports, or a chipset that will not forward peer-to-peer writes, can still fail
-  after the driver reports P2P as available. `nvidia-smi topo -p2p r` shows what
-  the driver advertises, not what works — confirm with a real peer-to-peer copy.
+- It does not make the host route peer traffic, and the failure is not graceful.
+  On a host that cannot route peer transactions the driver reports `OK`,
+  `cudaDeviceCanAccessPeer` returns true, the copy returns without error, and
+  **nothing arrives at the destination**. Measured on a dual-root-port desktop
+  platform (`nvidia-smi topo -m` = `PHB`, ACS `ReqRedir+ CmpltRedir+` on both
+  root ports): advertised `OK` in both directions, 100 % of a 256 MiB device-to-
+  device copy lost, latency unchanged at ~17 µs, while the host-staged control
+  copy was byte-exact. Silent data loss, not a clean failure. `nvidia-smi topo
+  -p2p r` shows what the driver advertises, not what works — always confirm with
+  a peer-to-peer copy that checks the received bytes.
 - It does not help if the BAR1 resize did not take effect. Check that BAR1 is
   actually mapped at the unlocked size (`lspci -vv`, `Region 1`) first; a 64 MiB
   BAR1 leaves nothing for BAR1 P2P to map through.

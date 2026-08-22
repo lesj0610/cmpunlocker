@@ -230,8 +230,10 @@ ok "DKMS conflicting modules resolution complete"
 if [[ -n "${ENABLE_P2P}" ]]; then
     ok "BAR1 P2P requested"
     warn "This only changes what the driver advertises and how the peer mapping is wired."
-    warn "If the host cannot route peer-to-peer traffic between the slots in use, transfers"
-    warn "will still fail. Confirm with a real peer-to-peer copy before relying on it."
+    warn "If the host cannot route peer-to-peer traffic between the slots in use, the copy"
+    warn "is accepted, no error is reported, and nothing arrives at the destination."
+    warn "That is silent data loss, not a clean failure. Confirm with a peer-to-peer copy"
+    warn "that checks the received bytes before running any multi-GPU workload."
 else
     info "P2P left as GSP reports it (use --p2p to negotiate it over BAR1)"
 fi

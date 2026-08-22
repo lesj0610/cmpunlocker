@@ -131,16 +131,30 @@ fi
 if [[ "$(cat "${INSTALL_MOD_DIR}/p2p_bar1" 2>/dev/null || echo no)" == "yes" ]]; then
     info "BAR1 P2P patches: included in this build"
     if command -v nvidia-smi &>/dev/null; then
-        p2p_matrix="$(nvidia-smi topo -p2p r 2>/dev/null || true)"
-        if [[ -n "${p2p_matrix}" ]]; then
-            printf '%s\n' "${p2p_matrix}" | sed 's/^/  /'
-            if printf '%s' "${p2p_matrix}" | grep -q 'NS'; then
-                warn "Driver still reports some pairs as not supported"
+        for dir in r w; do
+            p2p_matrix="$(nvidia-smi topo -p2p "${dir}" 2>/dev/null || true)"
+            [[ -n "${p2p_matrix}" ]] || continue
+            info "Advertised P2P (${dir}):"
+            printf '%s\n' "${p2p_matrix}" | sed -n '/GPU/,/^$/p' | sed 's/^/  /'
+            #
+            # Only the matrix rows carry per-pair status. The legend that
+            # nvidia-smi prints below the matrix spells out CNS/GNS/TNS/NS, so
+            # scanning the whole output always matches and always warns.
+            #
+            not_supported="$(printf '%s\n' "${p2p_matrix}" \
+                | grep -E '^[[:space:]]*GPU[0-9]+[[:space:]]' \
+                | sed -E 's/^[[:space:]]*GPU[0-9]+[[:space:]]+//' \
+                | grep -cwE 'NS|CNS|GNS|TNS|DR' || true)"
+            if (( not_supported > 0 )); then
+                warn "Driver still reports some pairs as not supported (${dir})"
             fi
-        fi
+        done
     fi
-    warn "Advertised P2P is not proof that peer traffic flows. Run a real"
-    warn "peer-to-peer copy before relying on it."
+    warn "Advertised P2P is not proof that peer traffic flows. A host that cannot"
+    warn "route peer transactions can accept the copy, report no error, and land"
+    warn "nothing at the destination - silent data loss, not a clean failure."
+    warn "Verify with a real peer-to-peer copy that checks the received data"
+    warn "before running any multi-GPU workload."
 else
     info "BAR1 P2P patches: not included (re-run install.sh with --p2p to add them)"
 fi
