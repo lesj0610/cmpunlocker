@@ -128,6 +128,23 @@ if [[ -r "${INSTALL_MOD_DIR}/card_profile" ]]; then
     info "Installed profile: $(cat "${INSTALL_MOD_DIR}/card_profile") / geometry: $(cat "${INSTALL_MOD_DIR}/unlock_geometry" 2>/dev/null || echo '?')"
 fi
 
+if [[ "$(cat "${INSTALL_MOD_DIR}/p2p_bar1" 2>/dev/null || echo no)" == "yes" ]]; then
+    info "BAR1 P2P patches: included in this build"
+    if command -v nvidia-smi &>/dev/null; then
+        p2p_matrix="$(nvidia-smi topo -p2p r 2>/dev/null || true)"
+        if [[ -n "${p2p_matrix}" ]]; then
+            printf '%s\n' "${p2p_matrix}" | sed 's/^/  /'
+            if printf '%s' "${p2p_matrix}" | grep -q 'NS'; then
+                warn "Driver still reports some pairs as not supported"
+            fi
+        fi
+    fi
+    warn "Advertised P2P is not proof that peer traffic flows. Run a real"
+    warn "peer-to-peer copy before relying on it."
+else
+    info "BAR1 P2P patches: not included (re-run install.sh with --p2p to add them)"
+fi
+
 if (( failures > 0 )); then
     echo ""
     die "${failures} GPU(s) failed unlock verification. Cold reboot if modules were just installed."
