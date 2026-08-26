@@ -16,6 +16,7 @@ The CMP 170HX ships with:
 - **Restricted memory geometry**: The HBM2e controller is configured for 8GB or 10GB instead of the full 64GB or 40GB the die supports
 - **PCIe Gen 1 cap**: The link is trained down to Gen 1 speeds instead of the Gen 2 the die supports
 - **JTAG lockout**: Host2Jtag register access is locked behind PLM permissions
+- **Profiling lockout**: A CMP SKU marker reported by GSP makes CUPTI (and therefore Nsight Systems / Nsight Compute) refuse to profile the card
 - **Firmware locks**: OTP (One-Time Programmable) fuses prevent reconfiguration at runtime
 
 All of the above are enforced during GSP (GPU System Processor) boot, which happens when the driver loads.
@@ -124,6 +125,28 @@ Host2Jtag register access is locked behind the same class of PLM permission as t
 
 ---
 
+### CMP SKU Marker (Profiling)
+
+Separate from the PLM/register work above, the driver carries a plain software marker that identifies the board as a CMP part, and NVIDIA's profiling stack refuses to run whenever it is set.
+
+The flow is:
+
+1. Physical RM (GSP firmware, `gpuGetIsCmpSku_GV100`) reports `isCmpSku = TRUE`
+2. Kernel RM fetches it over RPC in `_gpuInitChipInfo()` and caches it in `pGpu->pChipInfo`
+3. Userspace queries it via `NV2080_CTRL_CMD_GPU_GET_INFO_V2`, index `NV2080_CTRL_GPU_INFO_INDEX_CMP_SKU`
+4. CUPTI maps a `YES` answer onto `CUPTI_ERROR_CMP_DEVICE_NOT_SUPPORTED`, taking down every profiling client built on it (Nsight Systems, Nsight Compute, PyTorch profiler)
+
+Nothing else in the open kernel modules reads the flag, and the HWPM/perfmon paths carry no CMP check of their own, so `cmp-sku-mask.patch` clears the kernel's copy at step 2 — right where it arrives from GSP, before anything can observe it.
+
+The counters themselves are unmodified GA100 hardware and report correct values once the marker is gone.
+
+Expected dmesg output:
+```
+SEC2_DEBUG: cleared isCmpSku for devId 0x20c2
+```
+
+---
+
 ## Boot Flow
 
 1. **Driver loads** → nvidia-open kernel modules initialize
@@ -158,4 +181,6 @@ Card profile (8GB vs 10GB) is stored in `/lib/modules/$(uname -r)/updates/cmpunl
 - **Requires nvidia-open 610.43.0x** — stock NVIDIA proprietary driver has different boot paths and cannot be patched the same way
 - **Linux only** — GSP boot path is Linux-specific (Windows WDDM driver is fundamentally different)
 - **Kernel headers required** — modules must be compiled for the running kernel version
+- **`cuda-gdb` stays blocked** — `libcuda` holds its own CMP check for the debugger, independent of the kernel-side marker cleared by `cmp-sku-mask.patch`
+- **Nsight Compute still needs admin rights** — `NVreg_RestrictProfilingToAdminUsers` is a stock NVIDIA gate on all GPUs; run as root or load the driver with `NVreg_RestrictProfilingToAdminUsers=0`
 
