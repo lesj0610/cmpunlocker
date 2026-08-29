@@ -1,15 +1,35 @@
 [Unit]
-Description=CMP 170HX early-boot PCIe Gen2 retrain
-DefaultDependencies=no
-After=sysinit.target
-Before=basic.target multi-user.target graphical.target
+Description=CMP 170HX PCIe Gen2 retrain
+#
+# This used to run before basic.target. The card does not accept the Gen2
+# retrain that early: hammering it for 600 iterations during early boot never
+# caught a window, while the same helper succeeds on the first iteration once
+# the driver has brought the GPUs up. So the unit now runs after the driver is
+# initialised and retries until the window opens.
+#
+Wants=nvidia-persistenced.service
+After=nvidia-persistenced.service multi-user.target
 ConditionPathExists=/usr/local/sbin/gen2-hammer
+#
+# gen2-hammer needs roughly 150 s per GPU before it gives up, so a system with
+# several cards must be allowed to run far longer than the old 45 s budget or
+# systemd kills it part-way through the second card.
+#
+StartLimitIntervalSec=3600
+StartLimitBurst=40
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/sbin/gen2-hammer
-TimeoutStartSec=45
-RemainAfterExit=no
+TimeoutStartSec=600
+RemainAfterExit=yes
+#
+# A non-zero exit means no Gen2 window was caught. Retry once a minute; the
+# helper returns success as soon as every card is at Gen2, and Restart=on-failure
+# then stops the retries, so a live link is never retrained needlessly.
+#
+Restart=on-failure
+RestartSec=60
 
 [Install]
-WantedBy=sysinit.target
+WantedBy=multi-user.target
