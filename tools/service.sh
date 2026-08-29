@@ -72,6 +72,16 @@ install_service() {
     install -m 0755 "${HAMMER_SOURCE}" "${HAMMER_TARGET}"
     install -m 0644 "${SERVICE_SOURCE}" "${SERVICE_TARGET}"
     systemctl daemon-reload
+    #
+    # Older revisions of this unit were WantedBy=sysinit.target. systemctl
+    # enable only creates the link for the [Install] section it reads now, so
+    # upgrading in place leaves the sysinit symlink behind and the service is
+    # still pulled in during early boot, which is exactly what the new ordering
+    # is meant to avoid. Drop any stale wants before enabling.
+    #
+    rm -f "/etc/systemd/system/sysinit.target.wants/${SERVICE_NAME}"
+    systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
+    systemctl daemon-reload
     systemctl enable "${SERVICE_NAME}" >/dev/null
     ok "Enabled ${SERVICE_NAME} for the next boot"
     info "The service was not started now; the active desktop PCIe link was not touched."
