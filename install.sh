@@ -28,7 +28,7 @@ Usage: sudo ./install.sh [--profile=8gb|10gb] [--no-iommu] [--no-gen2-service]
   --profile=10gb  Force 10GB metadata label (geometry is still chosen per PCI ID)
   --no-iommu      Do not touch the kernel command line (leave IOMMU settings alone)
   --no-gen2-service
-                  Do not install the early-boot PCIe Gen2 retrain service
+                  Do not install the PCIe Gen2 retrain service
   --no-passthrough
                   Do not set the cards up for VM passthrough. By default the
                   unlock is made to survive being handed to vfio-pci, so a VM
@@ -267,9 +267,9 @@ if (( CONFIGURE_GEN2_SERVICE == 1 )); then
     chmod +x "${SCRIPT_DIR}/tools/hammer.sh" \
              "${SCRIPT_DIR}/tools/service.sh"
     "${SCRIPT_DIR}/tools/service.sh" install
-    ok "Early-boot Gen2 retrain service armed (not started in this session)"
+    ok "Gen2 retrain service armed for the next boot (not started in this session)"
 else
-    warn "--no-gen2-service given; early-boot PCIe retraining is not installed"
+    warn "--no-gen2-service given; PCIe Gen2 retraining is not installed"
 fi
 
 info "Configuring IOMMU (passthrough)"
